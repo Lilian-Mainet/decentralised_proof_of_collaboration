@@ -46,3 +46,60 @@
 
 ;; Data variable to keep track of contribution IDs
 (define-data-var contribution-counter uint u0)
+
+
+;; Initialize contract
+(define-public (initialize)
+    (begin
+        (map-set project-admins contract-owner true)
+        (ok true)
+    )
+)
+
+;; Add project admin
+(define-public (add-project-admin (admin principal))
+    (begin
+        (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+        (ok (map-set project-admins admin true))
+    )
+)
+
+;; Submit new contribution
+(define-public (submit-contribution (details (string-utf8 256)))
+    (let
+        (
+            (contribution-id (+ (var-get contribution-counter) u1))
+            (contributor tx-sender)
+        )
+        (begin
+            (var-set contribution-counter contribution-id)
+            (map-set Contributions contribution-id
+                {
+                    contributor: contributor,
+                    timestamp: block-height,
+                    details: details,
+                    score: u0,
+                    verified: false
+                }
+            )
+            (match (map-get? Contributors contributor)
+                prev-profile (map-set Contributors contributor 
+                    {
+                        total-score: (get total-score prev-profile),
+                        contribution-count: (+ (get contribution-count prev-profile) u1),
+                        tier: (get tier prev-profile),
+                        is-active: true
+                    })
+                (map-set Contributors contributor
+                    {
+                        total-score: u0,
+                        contribution-count: u1,
+                        tier: BRONZE,
+                        is-active: true
+                    }
+                )
+            )
+            (ok contribution-id)
+        )
+    )
+)
