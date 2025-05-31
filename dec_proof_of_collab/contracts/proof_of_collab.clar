@@ -103,3 +103,80 @@
         )
     )
 )
+
+;; Verify contribution and assign score
+(define-public (verify-contribution (contribution-id uint) (score uint))
+    (let
+        ((contribution (unwrap! (map-get? Contributions contribution-id) err-not-found)))
+        (begin
+            ;; Fix: Use default-to to handle the optional boolean value
+            (asserts! (default-to false (map-get? project-admins tx-sender)) err-owner-only)
+            (asserts! (not (get verified contribution)) err-already-verified)
+            
+            ;; Update contribution
+            (map-set Contributions contribution-id
+                (merge contribution { score: score, verified: true })
+            )
+            
+            ;; Update contributor profile
+            (match (map-get? Contributors (get contributor contribution))
+                prev-profile (begin
+                    (map-set Contributors (get contributor contribution)
+                        (merge prev-profile
+                            {
+                                total-score: (+ (get total-score prev-profile) score)
+                            }
+                        )
+                    )
+                    (ok true)
+                )
+                err-not-found
+            )
+        )
+    )
+)
+
+;; Calculate and update contributor tier
+(define-public (update-contributor-tier (contributor principal))
+    (match (map-get? Contributors contributor)
+        profile (let
+            ((total-score (get total-score profile)))
+            (begin
+                (map-set Contributors contributor
+                    (merge profile
+                        {
+                            tier: (if (>= total-score PLATINUM-THRESHOLD)
+                                    PLATINUM
+                                    (if (>= total-score GOLD-THRESHOLD)
+                                        GOLD
+                                        (if (>= total-score SILVER-THRESHOLD)
+                                            SILVER
+                                            BRONZE)))
+                        }
+                    )
+                )
+                (ok true)
+            ))
+        err-not-found
+    )
+)
+
+;; Read-only functions
+(define-read-only (get-contribution (contribution-id uint))
+    (map-get? Contributions contribution-id)
+)
+
+(define-read-only (get-contributor-profile (contributor principal))
+    (map-get? Contributors contributor)
+)
+
+(define-read-only (get-contributor-tier (contributor principal))
+    (match (map-get? Contributors contributor)
+        profile (ok (get tier profile))
+        err-not-found
+    )
+)
+
+(define-read-only (is-project-admin (address principal))
+    (default-to false (map-get? project-admins address))
+)
